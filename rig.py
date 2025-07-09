@@ -43,7 +43,6 @@ def traverse_edges(bm, vert_edges, root_idx):
     return edge_order
 
 def find_selected_edge_root(bm):
-    # Return the first vertex of the selected edge in Edit Mode as root
     selected_edges = [e for e in bm.edges if e.select]
     if selected_edges:
         return selected_edges[0].verts[0].index
@@ -71,7 +70,6 @@ class FOLD_OT_add_bones(bpy.types.Operator):
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
 
-        # Use the first vertex of the selected edge as root
         root_idx = find_selected_edge_root(bm)
         if root_idx is None:
             root_idx = find_root_vertex(build_edge_tree(bm))
@@ -98,7 +96,6 @@ class FOLD_OT_add_bones(bpy.types.Operator):
             bone = edit_bones.new(bone_name)
             bone.head = co1
             bone.tail = co2
-            # Set parent using sequential names, find index from parent_idx
             if parent_idx is not None:
                 try:
                     parent_idx_in_order = next(
@@ -113,18 +110,57 @@ class FOLD_OT_add_bones(bpy.types.Operator):
 
         bpy.ops.object.mode_set(mode='OBJECT')
 
-        # Add Armature modifier
         mod = mesh_obj.modifiers.new(name="Armature", type='ARMATURE')
         mod.object = arm_obj
         mesh_obj.parent = arm_obj
 
-        # Create vertex group for each bone
         for bone_name in bone_names:
             if bone_name not in mesh_obj.vertex_groups:
                 mesh_obj.vertex_groups.new(name=bone_name)
 
-        self.report({'INFO'}, "done")
+        self.report({'INFO'}, "Add Bones: Done")
         return {'FINISHED'}
+
+class FOLD_OT_delete_bones_preserve_hierarchy(bpy.types.Operator):
+    bl_idname = "foldrig.delete_bones_preserve"
+    bl_label = "Delete Bones"
+    bl_description = "Delete selected bones and preserve parent-child hierarchy and clean weights"
+
+    def execute(self, context):
+        obj = context.object
+        if not obj or obj.type != 'ARMATURE':
+            self.report({'ERROR'}, "Select an Armature object.")
+            return {'CANCELLED'}
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        edit_bones = obj.data.edit_bones
+        selected_bones = [b for b in edit_bones if b.select]
+
+        deleted_bone_names = []
+
+        for bone in selected_bones:
+            parent = bone.parent
+            children = [b for b in edit_bones if b.parent == bone]
+            for child in children:
+                child.parent = parent
+                if parent:
+                    child.use_connect = False
+            deleted_bone_names.append(bone.name)
+            edit_bones.remove(bone)
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Silinen kemik isimleriyle eşleşen vertex group'ları sil
+        for child_obj in context.scene.objects:
+            if child_obj.parent == obj and child_obj.type == 'MESH':
+                for bone_name in deleted_bone_names:
+                    vg = child_obj.vertex_groups.get(bone_name)
+                    if vg:
+                        child_obj.vertex_groups.remove(vg)
+
+        self.report({'INFO'}, "Delete Bones: Done (bones + vertex groups removed)")
+        return {'FINISHED'}
+
 
 class FOLD_PT_panel(bpy.types.Panel):
     bl_label = "Fold Rig"
@@ -136,8 +172,9 @@ class FOLD_PT_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator("foldrig.add_bones", icon='BONE_DATA')
+        layout.operator("foldrig.delete_bones_preserve", icon='X')
 
-classes = [FOLD_OT_add_bones, FOLD_PT_panel]
+classes = [FOLD_OT_add_bones, FOLD_OT_delete_bones_preserve_hierarchy, FOLD_PT_panel]
 
 def register():
     for cls in classes:
