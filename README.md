@@ -1,5 +1,7 @@
 # Fold Rig
 
+[Video](shorty.mp4)
+
 **Fold Rig** is a Blender add-on for quickly generating bones and vertex groups along a mesh "fold" structure, ideal for rigging folding or chain-like objects.
 
 ## Features
